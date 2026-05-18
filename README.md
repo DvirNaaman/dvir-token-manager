@@ -65,7 +65,7 @@ grep -rEi "https?://(?!127\.0\.0\.1|localhost)" --include="*.py" --include="*.js
 
 ## קרדיטים ורישיון
 
-- **מנוע המקור:** [Nathan Herkelman](https://github.com/) — פיתח את הקוד המקורי של מנתח ה-JSONL ולוח הבקרה, שוחרר תחת רישיון MIT.
+- **מנוע המקור:** [Nathan Herkelman](https://github.com/nateherkai) — פיתח את הקוד המקורי של מנתח ה-JSONL ולוח הבקרה, שוחרר תחת רישיון MIT.
 - **התאמה לעברית, RTL, UI וברנדינג:** [Dvir Naaman](https://github.com/DvirNaaman) — שכתוב מלא של ממשק המשתמש, תרגום, פלטת Meridian, גופן Heebo מקומי, מערכת טיפים, ואייקונוגרפיה.
 
 הפרויקט כולו מופץ תחת רישיון MIT (ראו קובץ `LICENSE`). אתם מוזמנים להשתמש, לשנות ולהפיץ — תוך שמירה על שתי שורות ה-copyright בקובץ הרישיון.
