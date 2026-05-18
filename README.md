@@ -2,9 +2,9 @@
 
 לוח בקרה מקומי לניתוח שימוש בטוקנים של Claude Code. קורא את קובצי ה-JSONL ש-Claude Code שומר תחת `~/.claude/projects/` והופך אותם לתצוגות עלות, היסטוריית שיחות, ניתוח פרומפטים יקרים, מפת שימוש בכלים, ניתוח מטמון, השוואה בין פרויקטים, וניתוח שימוש במיומנויות.
 
-![תצוגת סקירה כללית - חלק עליון](docs/images/dashboard-overview-top.jpg)
+![סקירה כללית - KPIs, עלות משוערת, כתיבה וקריאה למטמון](docs/images/dashboard-overview.png)
 
-![תצוגת סקירה כללית - חלק תחתון](docs/images/dashboard-overview-bottom.jpg)
+![סקילים - הסקילים המובילים לפי הפעלות](docs/images/dashboard-skills.png)
 
 ## פרטיות מלאה
 
