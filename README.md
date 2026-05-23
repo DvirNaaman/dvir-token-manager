@@ -1,25 +1,25 @@
-# מנהל הטוקנים | DN
+# Token Manager | DN
 
-לוח בקרה מקומי לניתוח שימוש בטוקנים של Claude Code. קורא את קובצי ה-JSONL ש-Claude Code שומר תחת `~/.claude/projects/` והופך אותם לתצוגות עלות, היסטוריית שיחות, ניתוח פרומפטים יקרים, מפת שימוש בכלים, ניתוח מטמון, השוואה בין פרויקטים, וניתוח שימוש במיומנויות.
+A local dashboard for analyzing Claude Code token usage. It reads the JSONL transcripts Claude Code stores under `~/.claude/projects/` and turns them into cost views, conversation history, expensive-prompt analytics, tool usage heatmaps, cache analytics, project comparisons, and skill usage breakdowns.
 
-![סקירה כללית - KPIs, עלות משוערת, כתיבה וקריאה למטמון](docs/images/dashboard-overview.png)
+![Overview - KPIs, estimated cost, cache writes and reads](docs/images/dashboard-overview.png)
 
-![סקילים - הסקילים המובילים לפי הפעלות](docs/images/dashboard-skills.png)
+![Skills - top skills by invocations](docs/images/dashboard-skills.png)
 
-## פרטיות מלאה
+## Fully private
 
-הכלי רץ אך ורק במחשב שלך. אין טלמטריה, אין שליחת נתונים החוצה, אין שיחות לרשת חיצונית. השרת מאזין על `127.0.0.1:8080` בלבד. כל הנכסים (ECharts, Heebo, אייקונים) מסופקים מקומית מתיקיית `web/`.
+The tool runs entirely on your machine. No telemetry, no data sent out, no calls to any external network. The server listens on `127.0.0.1:8080` only. All assets (ECharts, Heebo, icons) are served locally from the `web/` directory.
 
-לאימות עצמאי: ראו `PRIVACY_AUDIT.md` בתיקיית הפרויקט.
+For independent verification, see `PRIVACY_AUDIT.md` in the project directory.
 
-## דרישות מערכת
+## Requirements
 
-- Python 3.8 ומעלה
-- Claude Code מותקן עם לפחות שיחה אחת קיימת תחת `~/.claude/projects/`
-- דפדפן מודרני (Chrome, Edge, Firefox)
-- ללא צורך ב-`pip install`. הכלי משתמש בספריית התקן של Python בלבד.
+- Python 3.8 or newer
+- Claude Code installed with at least one existing conversation under `~/.claude/projects/`
+- A modern browser (Chrome, Edge, Firefox)
+- No `pip install` required. The tool uses the Python standard library only.
 
-## הרצה
+## Running
 
 ```bash
 git clone https://github.com/DvirNaaman/dvir-token-manager.git
@@ -27,53 +27,53 @@ cd dvir-token-manager
 python cli.py dashboard
 ```
 
-הפקודה תפעיל את השרת ב-`http://127.0.0.1:8080` ותפתח אותו אוטומטית בדפדפן. השרת סורק מחדש כל 30 שניות ושולח עדכונים בזמן אמת דרך SSE, כך שלא צריך לרענן ידנית.
+The command starts the server at `http://127.0.0.1:8080` and opens it automatically in your browser. The server re-scans every 30 seconds and pushes live updates over SSE, so you don't need to refresh manually.
 
-לעצירה: `Ctrl+C`.
+To stop: `Ctrl+C`.
 
-## פקודות CLI נוספות
+## Additional CLI commands
 
 ```bash
-python cli.py scan      # סריקה ידנית של קובצי JSONL חדשים
-python cli.py today     # סיכום של היום בטרמינל
-python cli.py stats     # סיכום מאז ומתמיד בטרמינל
-python cli.py tips      # הצעות לחיסכון מבוססות דפוסי שימוש
+python cli.py scan      # manually scan for new JSONL files
+python cli.py today     # today's summary in the terminal
+python cli.py stats     # all-time summary in the terminal
+python cli.py tips      # savings tips based on usage patterns
 ```
 
-לכל פקודה אפשר להוסיף `--db PATH` ו-`--projects-dir PATH` לעקיפת ברירות המחדל.
+Any command accepts `--db PATH` and `--projects-dir PATH` to override defaults.
 
-## משתני סביבה
+## Environment variables
 
-| משתנה | ברירת מחדל | תפקיד |
+| Variable | Default | Purpose |
 |---|---|---|
-| `HOST` | `127.0.0.1` | כתובת ההאזנה של השרת |
-| `PORT` | `8080` | פורט ההאזנה |
-| `CLAUDE_PROJECTS_DIR` | `~/.claude/projects` | מקור קובצי ה-JSONL |
-| `TOKEN_DASHBOARD_DB` | `~/.claude/token-dashboard.db` | מיקום מסד הנתונים SQLite המקומי |
+| `HOST` | `127.0.0.1` | Server listen address |
+| `PORT` | `8080` | Server listen port |
+| `CLAUDE_PROJECTS_DIR` | `~/.claude/projects` | Source of JSONL files |
+| `TOKEN_DASHBOARD_DB` | `~/.claude/token-dashboard.db` | Location of the local SQLite database |
 
-## קיצור דרך לטשטוש פרטיות
+## Privacy blur shortcut
 
-לחיצה על `Ctrl + B` בכל מקום בלוח הבקרה מטשטשת את טקסט הפרומפטים והתכנים הרגישים, לצורך צילומי מסך. לחיצה נוספת מבטלת.
+Pressing `Ctrl + B` anywhere in the dashboard blurs prompt text and sensitive content, useful for screenshots. Press again to unblur.
 
-## כיצד לאמת ש-0 קריאות יוצאות
+## How to verify zero outbound calls
 
 ```bash
 grep -rEi "https?://(?!127\.0\.0\.1|localhost)" --include="*.py" --include="*.js" --include="*.html" --include="*.css" .
 ```
 
-הפלט אמור להיות ריק (פרט להערות בתוך LICENSE headers של ECharts).
+The output should be empty (aside from comments in ECharts LICENSE headers).
 
-## קרדיטים ורישיון
+## Credits and license
 
-- **מנוע המקור:** [Nate Herk](https://github.com/nateherkai) — פיתח את הקוד המקורי של מנתח ה-JSONL ולוח הבקרה, שוחרר תחת רישיון MIT.
-- **התאמה לעברית, RTL, UI וברנדינג:** [Dvir Naaman](https://github.com/DvirNaaman) — שכתוב מלא של ממשק המשתמש, תרגום, פלטת Meridian, גופן Heebo מקומי, מערכת טיפים, ואייקונוגרפיה.
+- **Original engine:** [Nate Herk](https://github.com/nateherkai) — author of the original JSONL analyzer and dashboard code, released under the MIT license.
+- **Hebrew/RTL adaptation, UI, and branding:** [Dvir Naaman](https://github.com/DvirNaaman) — full UI rewrite, translation, Meridian palette, local Heebo font, tips engine, and iconography.
 
-הפרויקט כולו מופץ תחת רישיון MIT (ראו קובץ `LICENSE`). אתם מוזמנים להשתמש, לשנות ולהפיץ — תוך שמירה על שתי שורות ה-copyright בקובץ הרישיון.
+The project as a whole is distributed under the MIT license (see the `LICENSE` file). You're welcome to use, modify, and distribute it — just preserve both copyright lines in the license file.
 
-## תקלות נפוצות
+## Troubleshooting
 
-**טקסט עברי מקודד שגוי בטרמינל ב-Windows:** הריצו פעם אחת `chcp 65001` בחלון ה-CMD לפני הפקודה, או השתמשו ב-PowerShell / Windows Terminal שתומכים ב-UTF-8 כברירת מחדל.
+**Hebrew text encoded incorrectly in the terminal on Windows:** run `chcp 65001` once in the CMD window before the command, or use PowerShell / Windows Terminal which support UTF-8 by default.
 
-**הלוח ריק:** ודאו שיש לפחות שיחה אחת תחת `~/.claude/projects/<slug>/<session>.jsonl`. אם אתם בסביבה לא סטנדרטית, הצביעו ידנית עם `--projects-dir`.
+**Dashboard is empty:** make sure at least one conversation exists under `~/.claude/projects/<slug>/<session>.jsonl`. In non-standard environments, point to it manually with `--projects-dir`.
 
-**הפורט תפוס:** הפעילו עם פורט אחר: `PORT=8090 python cli.py dashboard`.
+**Port in use:** run with a different port: `PORT=8090 python cli.py dashboard`.
