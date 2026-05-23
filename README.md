@@ -1,6 +1,6 @@
 # Token Manager | DN
 
-A local dashboard for analyzing Claude Code token usage. It reads the JSONL transcripts Claude Code stores under `~/.claude/projects/` and turns them into cost views, conversation history, expensive-prompt analytics, tool usage heatmaps, cache analytics, project comparisons, and skill usage breakdowns.
+A local dashboard for analyzing Claude Code token usage. It reads the JSONL transcripts Claude Code stores under `~/.claude/projects/` and turns them into cost views, conversation history, top-spend prompt analysis, tool-usage heatmaps, cache analytics, cross-project comparisons, and skill usage breakdowns.
 
 ![Overview - KPIs, estimated cost, cache writes and reads](docs/images/dashboard-overview.png)
 
@@ -8,7 +8,7 @@ A local dashboard for analyzing Claude Code token usage. It reads the JSONL tran
 
 ## Fully private
 
-The tool runs entirely on your machine. No telemetry, no data sent out, no calls to any external network. The server listens on `127.0.0.1:8080` only. All assets (ECharts, Heebo, icons) are served locally from the `web/` directory.
+The tool runs entirely on your machine. No telemetry, no outbound network calls, no third-party requests. The server listens on `127.0.0.1:8080` only. All assets (ECharts, Heebo, icons) are served locally from the `web/` directory.
 
 For independent verification, see `PRIVACY_AUDIT.md` in the project directory.
 
@@ -57,11 +57,20 @@ Pressing `Ctrl + B` anywhere in the dashboard blurs prompt text and sensitive co
 
 ## How to verify zero outbound calls
 
+macOS / Linux:
+
 ```bash
 grep -rEi "https?://(?!127\.0\.0\.1|localhost)" --include="*.py" --include="*.js" --include="*.html" --include="*.css" .
 ```
 
-The output should be empty (aside from comments in ECharts LICENSE headers).
+Windows (PowerShell):
+
+```powershell
+Get-ChildItem -Recurse -Include *.py,*.js,*.html,*.css |
+  Select-String -Pattern 'https?://(?!127\.0\.0\.1|localhost)'
+```
+
+The output should be empty aside from comments in ECharts LICENSE headers and the upstream attribution links listed in `PRIVACY_AUDIT.md`.
 
 ## Credits and license
 
@@ -72,8 +81,12 @@ The project as a whole is distributed under the MIT license (see the `LICENSE` f
 
 ## Troubleshooting
 
-**Hebrew text encoded incorrectly in the terminal on Windows:** run `chcp 65001` once in the CMD window before the command, or use PowerShell / Windows Terminal which support UTF-8 by default.
+**Hebrew text shows as mojibake in the terminal on Windows:** run `chcp 65001` once in the CMD window before the command, or use PowerShell / Windows Terminal which support UTF-8 by default.
 
 **Dashboard is empty:** make sure at least one conversation exists under `~/.claude/projects/<slug>/<session>.jsonl`. In non-standard environments, point to it manually with `--projects-dir`.
 
-**Port in use:** run with a different port: `PORT=8090 python cli.py dashboard`.
+**Port in use:** run with a different port.
+
+- macOS / Linux: `PORT=8090 python cli.py dashboard`
+- Windows (PowerShell): `$env:PORT=8090; python cli.py dashboard`
+- Windows (CMD): `set PORT=8090 && python cli.py dashboard`
