@@ -90,3 +90,7 @@ The project as a whole is distributed under the MIT license (see the `LICENSE` f
 - macOS / Linux: `PORT=8090 python cli.py dashboard`
 - Windows (PowerShell): `$env:PORT=8090; python cli.py dashboard`
 - Windows (CMD): `set PORT=8090 && python cli.py dashboard`
+
+## A note on Claude Opus 4.8
+
+This dashboard is built and maintained with Claude Code. When Claude Opus 4.8 was released we moved our development workflow over to it straight away and refreshed the project's tooling to match. In daily use we found 4.8 noticeably sharper at multi step reasoning and large context work than the earlier 4.x models, which made maintaining a token analytics tool like this one, with its careful data parsing and many edge cases, considerably smoother. As part of this refresh the model identifiers and defaults across our projects were updated to Opus 4.8.
