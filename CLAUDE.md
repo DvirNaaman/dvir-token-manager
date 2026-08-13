@@ -10,7 +10,16 @@ Adapted from a permissively-licensed upstream codebase. The UI, language, and br
 
 ## Status
 
-Working codebase. 68+ Python unit tests (`python -m unittest discover tests`). Seven UI tabs wired up: סקירה כללית, פרומפטים, שיחות, פרויקטים, מיומנויות, טיפים לחיסכון, הגדרות. Runs on Windows, macOS, and Linux.
+Working codebase. 82 Python unit tests (`python -m unittest discover tests`). Seven UI tabs wired up: סקירה כללית, פרומפטים, שיחות, פרויקטים, מיומנויות, טיפים לחיסכון, הגדרות. Runs on Windows, macOS, and Linux.
+
+Last full review and refresh pass: **2026-08-13**. See the "Refresh, 2026-08-13" section of `README.md` for what changed and why.
+
+## Invariants worth knowing before editing
+
+- **`pricing.json` is the only place rates live.** Do not hardcode a per-token price anywhere else; `tips.py` used to, and the numbers went stale without anything failing. Model ids go through `pricing.normalize_model` first, which strips a `[1m]`-style context suffix and a `-YYYYMMDD` snapshot suffix so both price as the base model.
+- **The SSE stream fans out.** `server.publish()` writes to one bounded queue per connected client. Do not go back to a single shared queue: `queue.get()` pops, so one shared queue starves every tab but one, silently.
+- **`turns` counts user messages, not sessions.** The Hebrew label is "פניות"; "שיחות" is reserved for `sessions`.
+- **The CLI writes UTF-8 deliberately.** Anything reading its output through a pipe must decode UTF-8 explicitly, or a Hebrew Windows locale decodes with cp1255 and the output is lost.
 
 ## Architecture
 

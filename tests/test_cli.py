@@ -18,10 +18,17 @@ class CliTests(unittest.TestCase):
         self.db = os.path.join(self.tmp, "t.db")
 
     def _run(self, *args):
-        env = {**os.environ, "TOKEN_DASHBOARD_DB": self.db}
+        # encoding="utf-8" is required, not cosmetic. cli.py reconfigures its
+        # own streams to UTF-8 so Hebrew survives a Windows console, but
+        # text=True alone makes the parent decode with the locale codepage.
+        # On a Hebrew Windows machine that is cp1255, which cannot decode the
+        # UTF-8 bytes: the reader thread raises, and stdout silently comes back
+        # as None instead of the output.
+        env = {**os.environ, "TOKEN_DASHBOARD_DB": self.db, "PYTHONIOENCODING": "utf-8"}
         return subprocess.run(
             [sys.executable, "cli.py", *args],
-            cwd=ROOT, env=env, capture_output=True, text=True,
+            cwd=ROOT, env=env, capture_output=True,
+            encoding="utf-8", errors="replace",
         )
 
     def test_scan_then_today(self):

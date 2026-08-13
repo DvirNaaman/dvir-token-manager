@@ -2,10 +2,19 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import List, Optional
 
 from .db import connect
+from .pricing import load_pricing, rates_for_tier
+
+PRICING_JSON = Path(__file__).resolve().parent.parent / "pricing.json"
+
+
+def _now_iso() -> str:
+    """UTC now, without the naive datetime.utcnow() deprecated in Python 3.12."""
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
 
 def _iso_days_ago(today_iso: str, n: int) -> str:
@@ -35,7 +44,7 @@ def dismiss_tip(db_path, key: str) -> None:
 
 
 def cache_discipline_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
-    today_iso = today_iso or datetime.utcnow().isoformat()
+    today_iso = today_iso or _now_iso()
     since = _iso_days_ago(today_iso, 7)
     sql = """
       SELECT project_slug,
@@ -66,7 +75,7 @@ def cache_discipline_tips(db_path, today_iso: Optional[str] = None) -> List[dict
 
 
 def repeated_target_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
-    today_iso = today_iso or datetime.utcnow().isoformat()
+    today_iso = today_iso or _now_iso()
     since = _iso_days_ago(today_iso, 7)
     out = []
     with connect(db_path) as c:
@@ -105,8 +114,8 @@ def repeated_target_tips(db_path, today_iso: Optional[str] = None) -> List[dict]
     return out
 
 
-def right_size_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
-    today_iso = today_iso or datetime.utcnow().isoformat()
+def right_size_tips(db_path, today_iso: Optional[str] = None, pricing: Optional[dict] = None) -> List[dict]:
+    today_iso = today_iso or _now_iso()
     since = _iso_days_ago(today_iso, 7)
     sql = """
       SELECT COUNT(*) AS n,
@@ -121,8 +130,18 @@ def right_size_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
         row = c.execute(sql, (since,)).fetchone()
     if not row or (row["n"] or 0) < 10:
         return []
-    api_opus   = ((row["in_tok"] or 0) * 15 + (row["out_tok"] or 0) * 75) / 1_000_000
-    api_sonnet = ((row["in_tok"] or 0) *  3 + (row["out_tok"] or 0) * 15) / 1_000_000
+    # Rates come from pricing.json rather than being written into this file.
+    # They used to be hardcoded at 15/75 and 3/15, which stopped matching
+    # reality the moment Opus pricing changed, and the tip then advertised a
+    # saving three times larger than the real one.
+    p = pricing or load_pricing(PRICING_JSON)
+    opus = rates_for_tier("opus", p)
+    sonnet = rates_for_tier("sonnet", p)
+    if not opus or not sonnet:
+        return []
+    in_tok, out_tok = (row["in_tok"] or 0), (row["out_tok"] or 0)
+    api_opus   = (in_tok * opus["input"]   + out_tok * opus["output"])   / 1_000_000
+    api_sonnet = (in_tok * sonnet["input"] + out_tok * sonnet["output"]) / 1_000_000
     savings = api_opus - api_sonnet
     if savings < 1.0:
         return []
@@ -138,7 +157,7 @@ def right_size_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
 
 
 def outlier_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
-    today_iso = today_iso or datetime.utcnow().isoformat()
+    today_iso = today_iso or _now_iso()
     since = _iso_days_ago(today_iso, 7)
     out = []
     with connect(db_path) as c:
@@ -177,10 +196,10 @@ def outlier_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
     return out
 
 
-def all_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
+def all_tips(db_path, today_iso: Optional[str] = None, pricing: Optional[dict] = None) -> List[dict]:
     return [
         *cache_discipline_tips(db_path, today_iso),
         *repeated_target_tips(db_path, today_iso),
-        *right_size_tips(db_path, today_iso),
+        *right_size_tips(db_path, today_iso, pricing),
         *outlier_tips(db_path, today_iso),
     ]

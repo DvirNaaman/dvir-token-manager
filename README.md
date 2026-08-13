@@ -91,6 +91,24 @@ The project as a whole is distributed under the MIT license (see the `LICENSE` f
 - Windows (PowerShell): `$env:PORT=8090; python cli.py dashboard`
 - Windows (CMD): `set PORT=8090 && python cli.py dashboard`
 
+## Refresh, 2026-08-13
+
+The whole codebase went through a review, refresh and upgrade pass on this date. Nothing was removed and no tab changed shape; the corrections were to the numbers the dashboard reports and to how the server behaves.
+
+**Costs are correct again.** `pricing.json` still held the previous generation of models at their old rates, so every Opus turn was priced at three times its real cost and nothing in the Claude 5 family resolved at all. The table now covers Claude Opus 5, Sonnet 5, Fable 5 and the 4.x line at current list rates, and model ids carrying a context-window suffix (`claude-opus-5[1m]`) or a dated snapshot suffix (`claude-haiku-4-5-20251001`) resolve to their base model instead of falling through to a coarse tier guess. The right-sizing tip reads its rates from that same file rather than from two numbers hardcoded in the tips engine, where they had silently gone stale.
+
+**Multiple dashboard tabs work.** The event stream read from one shared queue, and reading from a queue removes the item, so with two tabs open each live update reached only one of them and the other quietly stopped refreshing. Every stream now has its own bounded queue.
+
+**The server is harder to reach from outside.** Requests whose `Host` header is not a loopback name are rejected, which closes the DNS-rebinding path that let a page on the open web read this server through your browser. Static file serving no longer accepts a sibling directory whose name merely starts like the web root, and `HEAD` no longer writes a body.
+
+**The date range applies everywhere.** The prompts tab accepted `since` and `until` and then ignored them, so it always showed all time while every other tab honoured the filter.
+
+**Listings are faster.** The projects and conversations views ran one extra query per project to work out display names. That is now a single grouped read, and a missing index on `parent_uuid` was making the prompt-to-answer join a full table scan.
+
+**Hebrew CLI output survives a pipe.** On a Hebrew Windows machine, anything reading the CLI's output through a pipe decoded it with the local codepage and failed on the Hebrew bytes, losing the output entirely.
+
+The Hebrew label for the per-project turn count read "סשנים", which is the word already used for conversations one column over; it now reads "פניות". The test suite covers all of this and stands at 82 tests.
+
 ## A note on Claude Opus 4.8
 
 This dashboard is built and maintained with Claude Code. When Claude Opus 4.8 was released we moved our development workflow over to it straight away and refreshed the project's tooling to match. In daily use we found 4.8 noticeably sharper at multi step reasoning and large context work than the earlier 4.x models, which made maintaining a token analytics tool like this one, with its careful data parsing and many edge cases, considerably smoother. As part of this refresh the model identifiers and defaults across our projects were updated to Opus 4.8.
