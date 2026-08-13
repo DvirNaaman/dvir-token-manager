@@ -6,6 +6,7 @@ import sqlite3
 import tempfile
 import threading
 import unittest
+import urllib.error
 import urllib.request
 
 from token_dashboard.db import init_db
@@ -36,6 +37,7 @@ class ServerTests(unittest.TestCase):
 
     def tearDown(self):
         self.httpd.shutdown()
+        self.httpd.server_close()
 
     def _get(self, path):
         return urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}").read()
@@ -75,6 +77,68 @@ class ServerTests(unittest.TestCase):
         with urllib.request.urlopen(req) as resp:
             self.assertEqual(resp.status, 200)
             self.assertEqual(resp.read(), b"")
+
+    def test_foreign_host_header_rejected(self):
+        # A page on the open web can point a hostname it controls at 127.0.0.1
+        # and read this server through the browser. Pinning Host to loopback
+        # closes that without affecting local use.
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/overview")
+        req.add_header("Host", "evil.example.com")
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(req)
+        self.assertEqual(ctx.exception.code, 403)
+
+    def test_static_path_traversal_blocked(self):
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(f"http://127.0.0.1:{self.port}/web/../pricing.json")
+        self.assertEqual(ctx.exception.code, 404)
+
+    def test_prompts_respects_date_range(self):
+        # The seeded prompt is dated 2026-04-19.
+        inside = json.loads(self._get("/api/prompts?since=2026-04-01&until=2026-05-01"))
+        outside = json.loads(self._get("/api/prompts?since=2026-01-01&until=2026-02-01"))
+        self.assertEqual(len(inside), 1)
+        self.assertEqual(outside, [])
+
+
+class StreamFanoutTests(unittest.TestCase):
+    """Every open dashboard tab must receive every event.
+
+    The stream used to read from one shared queue, and queue.get() pops, so a
+    second tab silently stopped refreshing.
+    """
+
+    def test_publish_reaches_every_subscriber(self):
+        from token_dashboard import server
+
+        a = server._subscribe()
+        b = server._subscribe()
+        try:
+            server.publish({"type": "scan", "n": 1})
+            self.assertEqual(a.get_nowait()["n"], 1)
+            self.assertEqual(b.get_nowait()["n"], 1)
+        finally:
+            server._unsubscribe(a)
+            server._unsubscribe(b)
+
+    def test_slow_subscriber_does_not_grow_without_bound(self):
+        from token_dashboard import server
+
+        q = server._subscribe()
+        try:
+            for i in range(server.SUBSCRIBER_BACKLOG * 3):
+                server.publish({"type": "scan", "n": i})
+            self.assertLessEqual(q.qsize(), server.SUBSCRIBER_BACKLOG)
+        finally:
+            server._unsubscribe(q)
+
+    def test_unsubscribe_stops_delivery(self):
+        from token_dashboard import server
+
+        q = server._subscribe()
+        server._unsubscribe(q)
+        server.publish({"type": "scan", "n": 7})
+        self.assertTrue(q.empty())
 
 
 if __name__ == "__main__":

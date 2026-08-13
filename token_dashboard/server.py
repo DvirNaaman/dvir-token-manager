@@ -24,10 +24,39 @@ from .skills import cached_catalog
 WEB_ROOT = Path(__file__).resolve().parent.parent / "web"
 PRICING_JSON = Path(__file__).resolve().parent.parent / "pricing.json"
 
-EVENTS: "queue.Queue[dict]" = queue.Queue()
-
 MAX_POST_BYTES = 1_000_000  # 1 MB — we only accept tiny JSON bodies (plan, tip key)
 MAX_LIMIT = 1000
+
+# Per-client event queues. A single shared queue was wrong: queue.get() pops,
+# so with two dashboard tabs open each scan event reached only one of them and
+# the other silently stopped refreshing. Every stream now gets its own bounded
+# queue, and a client too slow to drain it loses events instead of growing the
+# server's memory without limit.
+_subscribers: "set[queue.Queue[dict]]" = set()
+_subscribers_lock = threading.Lock()
+SUBSCRIBER_BACKLOG = 64
+
+
+def publish(evt: dict) -> None:
+    with _subscribers_lock:
+        targets = list(_subscribers)
+    for q in targets:
+        try:
+            q.put_nowait(evt)
+        except queue.Full:
+            pass  # slow reader — dropping is correct, the next scan re-reports
+
+
+def _subscribe() -> "queue.Queue[dict]":
+    q: "queue.Queue[dict]" = queue.Queue(maxsize=SUBSCRIBER_BACKLOG)
+    with _subscribers_lock:
+        _subscribers.add(q)
+    return q
+
+
+def _unsubscribe(q: "queue.Queue[dict]") -> None:
+    with _subscribers_lock:
+        _subscribers.discard(q)
 
 
 def _send_json(handler, obj, status: int = 200) -> None:
@@ -37,7 +66,8 @@ def _send_json(handler, obj, status: int = 200) -> None:
     handler.send_header("Content-Length", str(len(body)))
     handler.send_header("Cache-Control", "no-store")
     handler.end_headers()
-    handler.wfile.write(body)
+    if not getattr(handler, "head_only", False):
+        handler.wfile.write(body)
 
 
 def _send_error(handler, status: int, msg: str) -> None:
@@ -54,8 +84,11 @@ def _clamp_limit(raw, default: int) -> int:
 
 def _serve_static(handler, rel: str) -> None:
     rel = rel.lstrip("/")
-    p = (WEB_ROOT / rel).resolve()
-    if not str(p).startswith(str(WEB_ROOT.resolve())) or not p.is_file():
+    root = WEB_ROOT.resolve()
+    p = (root / rel).resolve()
+    # is_relative_to rather than a string startswith: the string form would let
+    # a sibling directory named like the root (web-backup/) pass the check.
+    if not p.is_relative_to(root) or not p.is_file():
         handler.send_response(404)
         handler.end_headers()
         return
@@ -64,21 +97,43 @@ def _serve_static(handler, rel: str) -> None:
     handler.send_response(200)
     handler.send_header("Content-Type", ctype or "application/octet-stream")
     handler.send_header("Content-Length", str(len(body)))
+    handler.send_header("X-Content-Type-Options", "nosniff")
     handler.end_headers()
-    handler.wfile.write(body)
+    if not getattr(handler, "head_only", False):
+        handler.wfile.write(body)
+
+
+def _host_allowed(handler) -> bool:
+    """Reject requests whose Host header is not a loopback name.
+
+    The dashboard binds to 127.0.0.1, but that alone does not stop a page on the
+    open web from pointing a hostname it controls at 127.0.0.1 and reading this
+    server's responses from the browser. Pinning the Host header to loopback
+    closes that, and costs nothing for the intended local use.
+    """
+    host = (handler.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]").lower()
+    return host in ("", "localhost", "127.0.0.1", "::1", "0.0.0.0")
 
 
 def build_handler(db_path: str, projects_dir: str):
     pricing = load_pricing(PRICING_JSON)
 
     class H(http.server.BaseHTTPRequestHandler):
+        head_only = False
+
         def log_message(self, fmt, *args):
             pass
 
         def do_HEAD(self):
-            return self.do_GET()
+            self.head_only = True
+            try:
+                return self.do_GET()
+            finally:
+                self.head_only = False
 
         def do_GET(self):
+            if not _host_allowed(self):
+                return _send_error(self, 403, "invalid Host header")
             url = urlparse(self.path)
             qs = parse_qs(url.query or "")
             path = url.path
@@ -100,8 +155,10 @@ def build_handler(db_path: str, projects_dir: str):
             if path == "/api/prompts":
                 limit = _clamp_limit(qs.get("limit", ["50"])[0], 50)
                 sort = qs.get("sort", ["tokens"])[0]
-                rows = expensive_prompts(db_path, limit=limit, sort=sort)
+                rows = expensive_prompts(db_path, limit=limit, sort=sort, since=since, until=until)
                 for r in rows:
+                    # Only the cache-read component: the column this feeds is
+                    # labelled "cache cost", not the turn's full price.
                     c = cost_for(r["model"], {
                         "input_tokens": 0, "output_tokens": 0,
                         "cache_read_tokens": r["cache_read_tokens"],
@@ -138,33 +195,44 @@ def build_handler(db_path: str, projects_dir: str):
                 sid = path.rsplit("/", 1)[1]
                 return _send_json(self, session_turns(db_path, sid))
             if path == "/api/tips":
-                return _send_json(self, all_tips(db_path))
+                return _send_json(self, all_tips(db_path, pricing=pricing))
             if path == "/api/plan":
                 return _send_json(self, {"plan": get_plan(db_path), "pricing": pricing})
             if path == "/api/scan":
                 n = scan_dir(projects_dir, db_path)
                 return _send_json(self, n)
             if path == "/api/stream":
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream")
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("Connection", "keep-alive")
-                self.end_headers()
+                return self._stream()
+            self.send_response(404)
+            self.end_headers()
+
+        def _stream(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            if self.head_only:
+                return
+            q = _subscribe()
+            try:
                 while True:
                     try:
-                        evt = EVENTS.get(timeout=15)
+                        evt = q.get(timeout=15)
                         chunk = f"data: {json.dumps(evt, default=str)}\n\n".encode()
                     except queue.Empty:
                         chunk = b": ping\n\n"
                     try:
                         self.wfile.write(chunk)
                         self.wfile.flush()
-                    except (BrokenPipeError, ConnectionResetError):
+                    except (BrokenPipeError, ConnectionResetError, OSError):
                         return
-            self.send_response(404)
-            self.end_headers()
+            finally:
+                _unsubscribe(q)
 
         def do_POST(self):
+            if not _host_allowed(self):
+                return _send_error(self, 403, "invalid Host header")
             url = urlparse(self.path)
             try:
                 length = int(self.headers.get("Content-Length") or 0)
@@ -184,6 +252,10 @@ def build_handler(db_path: str, projects_dir: str):
             if url.path == "/api/tips/dismiss":
                 dismiss_tip(db_path, body.get("key", ""))
                 return _send_json(self, {"ok": True})
+            if url.path == "/api/scan":
+                # The canonical verb for a scan, which mutates the database.
+                # GET is kept above so existing curl habits keep working.
+                return _send_json(self, scan_dir(projects_dir, db_path))
             self.send_response(404)
             self.end_headers()
 
@@ -195,9 +267,9 @@ def _scan_loop(db_path: str, projects_dir: str, interval: float = 30.0):
         try:
             n = scan_dir(projects_dir, db_path)
             if n["messages"] > 0:
-                EVENTS.put({"type": "scan", "n": n, "ts": time.time()})
+                publish({"type": "scan", "n": n, "ts": time.time()})
         except Exception as e:
-            EVENTS.put({"type": "error", "message": str(e)})
+            publish({"type": "error", "message": str(e)})
         time.sleep(interval)
 
 

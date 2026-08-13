@@ -47,6 +47,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_project   ON messages(project_slug);
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_model     ON messages(model);
 CREATE INDEX IF NOT EXISTS idx_messages_msgid     ON messages(session_id, message_id);
+-- expensive_prompts joins each user turn to the assistant turn that answered
+-- it. Without this the join is a full scan of messages per prompt row.
+CREATE INDEX IF NOT EXISTS idx_messages_parent    ON messages(parent_uuid);
 
 CREATE TABLE IF NOT EXISTS tool_calls (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -193,6 +196,21 @@ def best_project_name(cwds, slug: str) -> str:
     return project_name_for(cwds[0] if cwds else None, slug)
 
 
+def _pretty_names(conn) -> dict:
+    """Map every project_slug to its display name in a single pass.
+
+    Both project_summary and recent_sessions used to run one DISTINCT-cwd query
+    per slug, so a listing of N projects cost N+1 round trips. One grouped read
+    covers all of them.
+    """
+    cwds: dict = {}
+    for row in conn.execute(
+        "SELECT DISTINCT project_slug, cwd FROM messages WHERE cwd IS NOT NULL AND cwd != ''"
+    ):
+        cwds.setdefault(row["project_slug"], []).append(row["cwd"])
+    return cwds
+
+
 def overview_totals(db_path, since=None, until=None) -> dict:
     rng, args = _range_clause(since, until)
     sql = f"""
@@ -209,13 +227,18 @@ def overview_totals(db_path, since=None, until=None) -> dict:
         return dict(c.execute(sql, args).fetchone())
 
 
-def expensive_prompts(db_path, limit: int = 50, sort: str = "tokens") -> list:
+def expensive_prompts(db_path, limit: int = 50, sort: str = "tokens", since=None, until=None) -> list:
     """User prompt joined with the immediately-following assistant turn's tokens.
 
     sort="tokens" (default) → largest billable first.
     sort="recent"           → newest first.
+
+    since/until filter on the user turn's timestamp. They used to be accepted by
+    the endpoint and dropped here, so the prompts tab ignored the date range
+    every other tab respected.
     """
     order = "u.timestamp DESC" if sort == "recent" else "billable_tokens DESC"
+    rng, rng_args = _range_clause(since, until, "u.timestamp")
     sql = f"""
       SELECT u.uuid AS user_uuid, u.session_id, u.project_slug, u.timestamp,
              u.prompt_text, u.prompt_chars,
@@ -225,12 +248,12 @@ def expensive_prompts(db_path, limit: int = 50, sort: str = "tokens") -> list:
              COALESCE(a.cache_read_tokens,0) AS cache_read_tokens
         FROM messages u
         JOIN messages a ON a.parent_uuid = u.uuid AND a.type='assistant'
-       WHERE u.type='user' AND u.prompt_text IS NOT NULL
+       WHERE u.type='user' AND u.prompt_text IS NOT NULL {rng}
        ORDER BY {order}
        LIMIT ?
     """
     with connect(db_path) as c:
-        return [dict(r) for r in c.execute(sql, (limit,))]
+        return [dict(r) for r in c.execute(sql, (*rng_args, limit))]
 
 
 def project_summary(db_path, since=None, until=None) -> list:
@@ -251,12 +274,9 @@ def project_summary(db_path, since=None, until=None) -> list:
     """
     with connect(db_path) as c:
         rows = [dict(r) for r in c.execute(sql, args)]
+        cwds = _pretty_names(c)
         for r in rows:
-            cwds = [row["cwd"] for row in c.execute(
-                "SELECT DISTINCT cwd FROM messages WHERE project_slug=? AND cwd IS NOT NULL",
-                (r["project_slug"],),
-            )]
-            r["project_name"] = best_project_name(cwds, r["project_slug"])
+            r["project_name"] = best_project_name(cwds.get(r["project_slug"], []), r["project_slug"])
     return rows
 
 
@@ -290,17 +310,13 @@ def recent_sessions(db_path, limit: int = 20, since=None, until=None) -> list:
     """
     with connect(db_path) as c:
         rows = [dict(r) for r in c.execute(sql, (*args, limit))]
-        # Cache per-slug name lookups so we don't query once per session.
-        slug_cache = {}
+        cwds = _pretty_names(c)
+        name_cache: dict = {}
         for r in rows:
             slug = r["project_slug"]
-            if slug not in slug_cache:
-                cwds = [row["cwd"] for row in c.execute(
-                    "SELECT DISTINCT cwd FROM messages WHERE project_slug=? AND cwd IS NOT NULL",
-                    (slug,),
-                )]
-                slug_cache[slug] = best_project_name(cwds, slug)
-            r["project_name"] = slug_cache[slug]
+            if slug not in name_cache:
+                name_cache[slug] = best_project_name(cwds.get(slug, []), slug)
+            r["project_name"] = name_cache[slug]
     return rows
 
 

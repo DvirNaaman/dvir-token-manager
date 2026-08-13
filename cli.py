@@ -57,7 +57,7 @@ def cmd_today(args):
     s, e = _today_range()
     t = overview_totals(db, since=s, until=e)
     print(f"{PRODUCT} — היום")
-    print(f"  שיחות: {t['sessions']}    סשנים: {t['turns']}")
+    print(f"  שיחות: {t['sessions']}    פניות: {t['turns']}")
     print(f"  קלט:    {t['input_tokens']:>12,}    פלט: {t['output_tokens']:>12,}")
     print(f"  קריאת זיכרון: {t['cache_read_tokens']:>12,}    כתיבת זיכרון: {t['cache_create_5m_tokens']+t['cache_create_1h_tokens']:>12,}")
 
@@ -67,7 +67,7 @@ def cmd_stats(args):
     init_db(db)
     t = overview_totals(db)
     print(f"{PRODUCT} — מאז ומתמיד")
-    print(f"  שיחות: {t['sessions']}    סשנים: {t['turns']}")
+    print(f"  שיחות: {t['sessions']}    פניות: {t['turns']}")
     print(f"  קלט:    {t['input_tokens']:>12,}    פלט: {t['output_tokens']:>12,}")
 
 
